@@ -2,7 +2,7 @@
 
 AMT-APC is a method for training an automatic piano cover generation model by fine-tuning an AMT (Automatic Music Transcription) model.
 
-- Project page: [AMT-APC](https://misya11p.github.io/amt-apc/)
+- Project page: [AMT-APC](https://310hz.github.io/amt-apc/)
 - Paper: [[2409.14086] AMT-APC: Automatic Piano Cover by Fine-Tuning an Automatic Music Transcription Model](https://arxiv.org/abs/2409.14086)
 
 ## Usage (Piano Cover Generation)
@@ -18,7 +18,7 @@ pip install torch torchaudio soundfile pretty-midi tqdm
 2. Download the pre-trained model
 
 ```bash
-wget -P models/params/ https://github.com/misya11p/amt-apc/releases/download/beta/apc.pth
+wget -P models/params/ https://github.com/310hz/amt-apc/releases/download/beta/apc.pth
 ```
 
 3. Run the inference code
@@ -52,7 +52,7 @@ pip install -r requirements.txt
 2. Download the pre-trained AMT model
 
 ```bash
-wget -P models/params/ https://github.com/misya11p/amt-apc/releases/download/beta/amt.pth
+wget -P models/params/ https://github.com/310hz/amt-apc/releases/download/beta/amt.pth
 ```
 
 3. Download the dataset
