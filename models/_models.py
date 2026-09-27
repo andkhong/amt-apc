@@ -94,7 +94,15 @@ class Pipeline(AMT):
             sv = sv.to(self.device).to(torch.float32)
 
         feature = self.wav2feature(path_input)
-        _, _, _, _, onset, offset, frame, velocity = self.transcript(feature, sv, silent)
+        infer = config.infer
+        if infer.get("stride", False) or infer.get("velocity_fallback", False):
+            onset, offset, frame, velocity, velocity_nz = self.transcript_stride_sv(
+                feature, sv, stride=infer.get("stride", False)
+            )
+            if infer.get("velocity_fallback", False):
+                velocity = velocity_nz
+        else:
+            _, _, _, _, onset, offset, frame, velocity = self.transcript(feature, sv, silent)
         if not silent:
             print("Converting to MIDI ...", end=" ", flush=True)
         note = self.mpe2note(
@@ -106,9 +114,71 @@ class Pipeline(AMT):
             thred_offset=config.infer.threshold.offset,
             thred_mpe=config.infer.threshold.frame,
         )
-        self.note2midi(note, path_output, config.infer.min_duration)
+        note = apply_min_duration(note, config.infer.min_duration, extend=config.infer.get("extend_short", False))
+        self.note2midi(note, path_output, 0.0)
         if not silent:
             print("Done.")
+
+
+    def transcript_stride_sv(self, a_feature, sv=None, stride=True):
+        """The B (time-axis) heads with the style vector, plus the velocity argmax over classes 1..127.
+
+        Fork fix A4: `stride=True` is hFT-Transformer's own `transcript_stride` (windows hop by half a
+        window, each keeps its centre half, `n_offset = num_frame // 4`), which upstream AMT-APC does
+        not call: its `transcript` uses non-overlapping 512-frame windows with 32 frames of context,
+        so frames near every 8.2 s join are decoded with almost no context.
+        Fork fix A2: `velocity_nz` = argmax over classes 1..127. `mpe2note` drops a note whose onset
+        fired but whose velocity argmax (class 0 = "no note") is 0 at that frame.
+        """
+        cfg = self.config
+        num_frame = cfg["input"]["num_frame"]
+        n_bins = cfg["feature"]["n_bins"]
+        num_note = cfg["midi"]["num_note"]
+        margin_b, margin_f = cfg["input"]["margin_b"], cfg["input"]["margin_f"]
+        hop, n_offset = (num_frame // 2, num_frame // 4) if stride else (num_frame, 0)
+        a_feature = np.array(a_feature, dtype=np.float32)
+        rows = int(np.ceil(a_feature.shape[0] / hop) * hop)
+        pad_b = np.full([margin_b + n_offset, n_bins], cfg["input"]["min_value"], dtype=np.float32)
+        tail = rows - a_feature.shape[0] + (num_frame - n_offset) + margin_f
+        pad_f = np.full([tail, n_bins], cfg["input"]["min_value"], dtype=np.float32)
+        a_input = torch.from_numpy(np.concatenate([pad_b, a_feature, pad_f], axis=0))
+        onset = np.zeros((rows, num_note), dtype=np.float32)
+        offset = np.zeros((rows, num_note), dtype=np.float32)
+        mpe = np.zeros((rows, num_note), dtype=np.float32)
+        velocity = np.zeros((rows, num_note), dtype=np.int16)
+        velocity_nz = np.zeros((rows, num_note), dtype=np.int16)
+        self.model.eval()
+        keep = slice(n_offset, n_offset + hop)
+        for i in range(0, a_feature.shape[0], hop):
+            input_spec = a_input[i:i + margin_b + num_frame + margin_f].T.unsqueeze(0).to(self.device)
+            with torch.no_grad():
+                out = self.model(input_spec, sv)
+            onset[i:i + hop] = out[5].squeeze(0)[keep].cpu().numpy()
+            offset[i:i + hop] = out[6].squeeze(0)[keep].cpu().numpy()
+            mpe[i:i + hop] = out[7].squeeze(0)[keep].cpu().numpy()
+            vel = out[8].squeeze(0)[keep]
+            velocity[i:i + hop] = vel.argmax(2).cpu().numpy()
+            velocity_nz[i:i + hop] = (vel[..., 1:].argmax(2) + 1).cpu().numpy()
+        return onset, offset, mpe, velocity, velocity_nz
+
+
+def apply_min_duration(notes, min_duration, extend=False):
+    """Upstream's `note2midi` floor drops every note shorter than `min_duration`.
+
+    Fork fix A1 (`extend=True`): keep the note and lengthen it to `min_duration`, never past the
+    next onset of the same key. With the offset threshold at 1.0 a fast note's end is where the
+    frame head falls, often < 80 ms, and the floor deleted it.
+    """
+    if not extend:
+        return [n for n in notes if n["offset"] - n["onset"] >= min_duration]
+    next_onset, out = {}, []
+    for n in sorted(notes, key=lambda x: (x["onset"], x["pitch"]), reverse=True):
+        m = dict(n)
+        if m["offset"] - m["onset"] < min_duration:
+            m["offset"] = max(m["offset"], min(m["onset"] + min_duration, next_onset.get(m["pitch"], float("inf"))))
+        next_onset[m["pitch"]] = m["onset"]
+        out.append(m)
+    return sorted(sorted(out, key=lambda x: x["pitch"]), key=lambda x: x["onset"])
 
 
 class Spec2MIDI(BaseSpec2MIDI):

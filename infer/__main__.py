@@ -52,7 +52,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("input", type=str, help="Path to the input wav file or URL of YouTube video")
     parser.add_argument("-o", "--output", type=str, default="output.mid", help="Path to the output midi file. Defaults to 'output.mid'")
-    parser.add_argument("-s", "--style", type=str, default="level2", help="Cover style. Valid values are 'level1', 'level2', and 'level3'. Defaults to 'level2'")
+    parser.add_argument("-s", "--style", type=str, default="level2", help="Cover style. Valid values are 'level1', 'level2', 'level3', and (fork, under test) 'wide', 'lowreg'. Defaults to 'level2'")
     parser.add_argument("--path_model", type=str, default=None)
     parser.add_argument("--device", type=str, default=None)
     args = parser.parse_args()

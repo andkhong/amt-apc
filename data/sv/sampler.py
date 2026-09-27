@@ -15,6 +15,8 @@ PRESETS = {
     "level1": (0., 0.9, -0.5),
     "level2": (0., 1., 0.),
     "level3": (0.5, 1.05, 0.5),
+    # Fork (FORK-AMT style setting under test): a wider pitch spread with level3's onset rate.
+    "wide": (0., 1.15, 0.5),
 }
 
 
@@ -56,7 +58,21 @@ class Sampler:
         _, _, f_onset = self.features[key_onset]
         return f_Vel, f_pitch, f_onset
 
+    def lowreg(self, top=0.10):
+        """Fork (FORK-AMT style setting under test): level2's velocity bins, the register bins
+        (8:16) averaged over the training songs (top 10 %) with the most mass in the two lowest
+        register bins (below ~F2), and level3's onset-rate bins. Asks for a lower left hand."""
+        l2 = self.sample("level2")
+        l3 = self.sample("level3")
+        vs = np.array(list(self.style_vectors.values()))
+        low = vs[:, 8:10].sum(1)
+        reg = vs[low >= np.percentile(low, 100 * (1 - top))][:, 8:16].mean(0)
+        self.latest = np.concatenate([l2[0:8], reg, l3[16:24]]).astype(np.float32)
+        return self.latest
+
     def sample(self, params="level2"):
+        if params == "lowreg":
+            return self.lowreg()
         if isinstance(params, str):
             if params not in PRESETS:
                 raise ValueError(f"Invalid value for 'params': {params}")
