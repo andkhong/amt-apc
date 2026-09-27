@@ -59,7 +59,9 @@
       "offset": 1.0,
       "frame": 0.5
     },
-    "min_duration": 0.08
+    "min_duration": 0.08,
+    "extend_short": true,
+    "velocity_fallback": true
   },
   "path": {
     "amt": "models/params/amt.pth",
